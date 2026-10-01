@@ -1,0 +1,15 @@
+{
+  "type": "module",
+  "name": "drabzin",
+  "private": true,
+  "devDependencies": {
+    "jpeg-js": "^0.4.4"
+  },
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/build.mjs && node scripts/serve.mjs --dist",
+    "test": "node test/eval.mjs",
+    "samples": "node test/samples.mjs"
+  }
+}
