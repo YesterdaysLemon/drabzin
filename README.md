@@ -24,6 +24,8 @@ Everything runs in the browser. Images are never uploaded, and the app is plain 
 
 "Material" is whatever differs from the colour at the crop's border. Use **Swap material and background** if it picked the wrong side.
 
+See [docs/requirements.md](docs/requirements.md) for the shop's requirements and how each reference design is handled.
+
 ## Development
 
 ```sh
