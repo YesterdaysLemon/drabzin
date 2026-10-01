@@ -2,14 +2,18 @@
   "type": "module",
   "name": "drabzin",
   "private": true,
+  "dependencies": {
+    "onnxruntime-web": "1.30.0"
+  },
   "devDependencies": {
-    "jpeg-js": "^0.4.4"
+    "jpeg-js": "^0.4.4",
+    "playwright": "1.62.1"
   },
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "build": "node scripts/build.mjs",
     "preview": "node scripts/build.mjs && node scripts/serve.mjs --dist",
-    "test": "node test/eval.mjs",
+    "test": "node test/eval.mjs && node --test test/fit.test.mjs test/ink.test.mjs test/segment-geometry.test.mjs test/i18n.test.mjs test/feedback.test.mjs",
     "samples": "node test/samples.mjs"
   }
 }

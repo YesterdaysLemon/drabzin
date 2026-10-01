@@ -97,7 +97,7 @@ export function buildCutGeometry(graph, opts) {
 
   const warnings = [];
   const flags = { tinyHoles: [], tightHoles: [], thinBridges: [], islands: islands.map(fromPath) };
-  if (islands.length) warnings.push(`${islands.length} loose ${islands.length === 1 ? 'piece' : 'pieces'} will fall out when cut. Join ${islands.length === 1 ? 'it' : 'them'} to the bars, or add small tabs.`);
+  if (islands.length) warnings.push({ code: 'loose', n: islands.length, text: `${islands.length} loose ${islands.length === 1 ? 'piece' : 'pieces'} will fall out when cut. Join ${islands.length === 1 ? 'it' : 'them'} to the bars, or add small tabs.` });
 
   // Holes the tool cannot clear (morphological opening by the tool radius).
   if (toolDiameter > 0) {
@@ -109,8 +109,8 @@ export function buildCutGeometry(graph, opts) {
       const lost = 1 - reopened.reduce((s, p) => s + area(p), 0) / area(h);
       if (lost > 0.2) flags.tightHoles.push(fromPath(h));
     }
-    if (flags.tinyHoles.length) warnings.push(`${flags.tinyHoles.length} hole(s) are smaller than the ${toolDiameter} mm tool and cannot be cut.`);
-    if (flags.tightHoles.length) warnings.push(`${flags.tightHoles.length} hole(s) have narrow points the ${toolDiameter} mm tool cannot fully reach.`);
+    if (flags.tinyHoles.length) warnings.push({ code: 'tinyHoles', n: flags.tinyHoles.length, mm: toolDiameter, text: `${flags.tinyHoles.length} hole(s) are smaller than the ${toolDiameter} mm tool and cannot be cut.` });
+    if (flags.tightHoles.length) warnings.push({ code: 'tightHoles', n: flags.tightHoles.length, mm: toolDiameter, text: `${flags.tightHoles.length} hole(s) have narrow points the ${toolDiameter} mm tool cannot fully reach.` });
   }
   // Solid bridges thinner than the minimum (opening of the solid by half the minimum).
   if (minBridge > 0) {
@@ -118,7 +118,7 @@ export function buildCutGeometry(graph, opts) {
     const opened = offset(offset(solidFinal, -r), r);
     const thin = boolean(ClipperLib.ClipType.ctDifference, solidFinal, opened).filter((p) => area(p) > (minBridge * minBridge) / 4);
     flags.thinBridges = thin.map(fromPath);
-    if (thin.length) warnings.push(`${thin.length} place(s) where the metal is thinner than ${minBridge} mm.`);
+    if (thin.length) warnings.push({ code: 'thin', n: thin.length, mm: minBridge, text: `${thin.length} place(s) where the metal is thinner than ${minBridge} mm.` });
   }
 
   return {

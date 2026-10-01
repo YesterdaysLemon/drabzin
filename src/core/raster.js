@@ -58,6 +58,17 @@ export function applyH(H, u, v) {
   return { x: (H.a * u + H.b * v + H.c) / z, y: (H.d * u + H.e * v + H.f) / z };
 }
 
+// Where a source-image point lands in the straightened outW x outH crop of quad q.
+export function quadToCrop(q, pt, outW, outH) {
+  const { a, b, c, d, e, f, g, h } = squareToQuad(q);
+  // Inverse of [[a b c] [d e f] [g h 1]] by cofactors (the scale cancels out).
+  const A = e - f * h, B = c * h - b, C = b * f - c * e;
+  const D = f * g - d, E = a - c * g, F = c * d - a * f;
+  const G = d * h - e * g, Hh = b * g - a * h, I = a * e - b * d;
+  const z = G * pt.x + Hh * pt.y + I;
+  return { x: ((A * pt.x + B * pt.y + C) / z) * outW, y: ((D * pt.x + E * pt.y + F) / z) * outH };
+}
+
 // Rectify the quad (clockwise from top-left) into an outW x outH image.
 export function warpQuad(img, quad, outW, outH) {
   const H = squareToQuad(quad);
@@ -311,29 +322,168 @@ export function distanceTransform(mask) {
 // "Ink" field 0..1 from colour distance to the background colour (estimated from the
 // border of the crop). Works for black-on-white, white-on-black, coloured fills (gold
 // leaves), and coloured backgrounds. Returns { w, h, data, bg }.
-export function inkFromRGBA(rgba, w, h) {
-  const border = [];
-  const step = Math.max(1, Math.floor((w + h) / 400));
-  const push = (x, y) => { const j = (y * w + x) * 4; border.push([rgba[j], rgba[j + 1], rgba[j + 2], rgba[j + 3]]); };
-  for (let x = 0; x < w; x += step) { push(x, 0); push(x, h - 1); }
-  for (let y = 0; y < h; y += step) { push(0, y); push(w - 1, y); }
-  // Per-channel median of the border is robust to a design that touches the edge.
-  const med = (k) => border.map((p) => p[k]).sort((a, b) => a - b)[border.length >> 1];
-  const bg = [med(0), med(1), med(2)];
+// Colour -> design field: 0 = background, 1 = design, for every pixel of the crop.
+//   bg:       the background colour [r, g, b], or null: the median colour of the crop's border.
+//   design:   the design colour [r, g, b], or null. With it, a pixel's value is how far it lies
+//             along the line from the background colour to the design colour, so a grey halfway
+//             between white paper and black ink reads 0.5 (pencil shading, shadows, the desk).
+//             Without it, a pixel's value is its distance from the background colour.
+export function inkFromRGBA(rgba, w, h, { bg = null, design = null } = {}) {
+  bg = bg ?? borderColor(rgba, w, h);
   const dist = new Float32Array(w * h);
-  // Perceptual difference (CIE76 in Lab) so pale-but-saturated colours (gold highlights)
-  // still read as material while light greys (watermarks, JPEG noise) do not.
+  // Perceptual colour (CIE76 in Lab) so pale-but-saturated colours (gold highlights) still
+  // read as material while light greys (watermarks, JPEG noise) do not.
   const bgLab = rgbToLab(bg[0], bg[1], bg[2]);
+  const dLab = design && rgbToLab(design[0], design[1], design[2]);
+  const ax = dLab && [dLab[0] - bgLab[0], dLab[1] - bgLab[1], dLab[2] - bgLab[2]];
+  const ax2 = ax && Math.max(1e-6, ax[0] * ax[0] + ax[1] * ax[1] + ax[2] * ax[2]);
   for (let i = 0, j = 0; i < dist.length; i++, j += 4) {
     const a = rgba[j + 3] / 255;
     const L = rgbToLab(rgba[j] * a + bg[0] * (1 - a), rgba[j + 1] * a + bg[1] * (1 - a), rgba[j + 2] * a + bg[2] * (1 - a));
-    dist[i] = Math.hypot(L[0] - bgLab[0], L[1] - bgLab[1], L[2] - bgLab[2]) / 100;
+    const d0 = L[0] - bgLab[0], d1 = L[1] - bgLab[1], d2 = L[2] - bgLab[2];
+    dist[i] = ax ? (d0 * ax[0] + d1 * ax[1] + d2 * ax[2]) / ax2 : Math.hypot(d0, d1, d2) / 100;
   }
-  // Scale so the typical ink colour maps near 1: use a high percentile of the distances.
-  const sorted = Float32Array.from(dist).sort();
-  const hi = Math.max(0.08, sorted[Math.floor(sorted.length * 0.995)]);
-  for (let i = 0; i < dist.length; i++) dist[i] = Math.min(1, dist[i] / hi);
+  if (ax) {
+    for (let i = 0; i < dist.length; i++) dist[i] = Math.min(1, Math.max(0, dist[i]));
+  } else {
+    // Scale so the typical ink colour maps near 1: use a high percentile of the distances.
+    const sorted = Float32Array.from(dist).sort();
+    const hi = Math.max(0.08, sorted[Math.floor(sorted.length * 0.995)]);
+    for (let i = 0; i < dist.length; i++) dist[i] = Math.min(1, dist[i] / hi);
+  }
   return { w, h, data: dist, bg };
+}
+
+// Per-channel median of the border: robust to a design that touches the edge.
+export function borderColor(rgba, w, h) {
+  const border = [];
+  const step = Math.max(1, Math.floor((w + h) / 400));
+  const push = (x, y) => { const j = (y * w + x) * 4; border.push([rgba[j], rgba[j + 1], rgba[j + 2]]); };
+  for (let x = 0; x < w; x += step) { push(x, 0); push(x, h - 1); }
+  for (let y = 0; y < h; y += step) { push(0, y); push(w - 1, y); }
+  const med = (k) => border.map((p) => p[k]).sort((a, b) => a - b)[border.length >> 1];
+  return [med(0), med(1), med(2)];
+}
+
+// The colour the design most likely has: the median colour of the pixels furthest from the background.
+export function guessDesignColor(rgba, w, h, bg) {
+  const bgLab = rgbToLab(bg[0], bg[1], bg[2]);
+  const step = Math.max(1, Math.floor(Math.sqrt((w * h) / 250000)));
+  const px = [];
+  for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) {
+    const j = (y * w + x) * 4, L = rgbToLab(rgba[j], rgba[j + 1], rgba[j + 2]);
+    px.push([Math.hypot(L[0] - bgLab[0], L[1] - bgLab[1], L[2] - bgLab[2]), rgba[j], rgba[j + 1], rgba[j + 2]]);
+  }
+  px.sort((a, b) => b[0] - a[0]);
+  const top = px.slice(0, Math.max(1, Math.ceil(px.length * 0.01)));
+  const med = (k) => top.map((p) => p[k]).sort((a, b) => a - b)[top.length >> 1];
+  return [med(1), med(2), med(3)];
+}
+
+// Uneven light (a shadow across the paper, a lamp on one side): find how bright the background
+// is at every spot and divide that out, so the whole crop looks evenly lit before the colours
+// are read. The light map is smooth on purpose: it is measured on a coarse grid from the
+// background side of every cell (its brighter pixels when the design is darker than the
+// background, its darker ones when it is lighter), and cells that are mostly design are
+// replaced by a smooth fit through the others, so big solid shapes are not taken for shade.
+//   returns { rgba, gain }: the evenly lit copy, and the light per pixel (1 = as bright as bg)
+export function evenLight(rgba, w, h, { bg = null, design = null, cells = 12 } = {}) {
+  bg = bg ?? borderColor(rgba, w, h);
+  design = design ?? guessDesignColor(rgba, w, h, bg);
+  const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const bgLum = Math.max(1, lum(bg[0], bg[1], bg[2]));
+  const darkDesign = lum(design[0], design[1], design[2]) <= bgLum;
+  const q = darkDesign ? 0.8 : 0.2;   // the background side of a cell
+  // Grid of about square cells, `cells` along the long side.
+  const cs = Math.max(8, Math.ceil(Math.max(w, h) / cells));
+  const gx = Math.ceil(w / cs), gy = Math.ceil(h / cs);
+  const level = new Float64Array(gx * gy);
+  const step = Math.max(1, Math.floor(cs / 24));
+  for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
+    const v = [];
+    for (let y = cy * cs; y < Math.min(h, (cy + 1) * cs); y += step)
+      for (let x = cx * cs; x < Math.min(w, (cx + 1) * cs); x += step) { const j = (y * w + x) * 4; v.push(lum(rgba[j], rgba[j + 1], rgba[j + 2])); }
+    v.sort((a, b) => a - b);
+    level[cy * gx + cx] = v[Math.min(v.length - 1, Math.floor(v.length * q))];
+  }
+  // Robust smooth fit (quadratic surface, reweighted): cells far to the design side of the
+  // fit are design, not shade, and take the fit's value instead.
+  const fit = robustQuadFit(level, gx, gy, darkDesign);
+  for (let i = 0; i < level.length; i++) {
+    const designSide = darkDesign ? level[i] < fit[i] * 0.8 : level[i] > fit[i] * 1.25;
+    if (designSide) level[i] = fit[i];
+  }
+  // Light per pixel: bilinear between cell centres, relative to the background colour.
+  const gain = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const fy = Math.min(gy - 1, Math.max(0, (y + 0.5) / cs - 0.5));
+    const y0 = Math.floor(fy), y1 = Math.min(gy - 1, y0 + 1), ty = fy - y0;
+    for (let x = 0; x < w; x++) {
+      const fx = Math.min(gx - 1, Math.max(0, (x + 0.5) / cs - 0.5));
+      const x0 = Math.floor(fx), x1 = Math.min(gx - 1, x0 + 1), tx = fx - x0;
+      const l = (level[y0 * gx + x0] * (1 - tx) + level[y0 * gx + x1] * tx) * (1 - ty) + (level[y1 * gx + x0] * (1 - tx) + level[y1 * gx + x1] * tx) * ty;
+      gain[y * w + x] = Math.max(0.05, l / bgLum);
+    }
+  }
+  const out = new Uint8ClampedArray(rgba.length);
+  for (let i = 0, j = 0; i < gain.length; i++, j += 4) {
+    const k = 1 / gain[i];
+    out[j] = rgba[j] * k; out[j + 1] = rgba[j + 1] * k; out[j + 2] = rgba[j + 2] * k; out[j + 3] = rgba[j + 3];
+  }
+  return { rgba: out, gain, bg, design };
+}
+
+// Least-squares quadratic surface through a grid of values, refitted a few times with the
+// cells on the design side of the previous fit given almost no weight.
+function robustQuadFit(v, gx, gy, darkDesign) {
+  const n = v.length, wt = new Float64Array(n).fill(1);
+  const pts = [];
+  for (let y = 0; y < gy; y++) for (let x = 0; x < gx; x++) {
+    const u = x / Math.max(1, gx - 1) - 0.5, t = y / Math.max(1, gy - 1) - 0.5;
+    pts.push([1, u, t, u * u, u * t, t * t]);
+  }
+  const k = n >= 12 ? 6 : n >= 3 ? 3 : 1;
+  const fit = new Float64Array(n);
+  for (let it = 0; it < 6; it++) {
+    const A = Array.from({ length: k }, () => new Float64Array(k)), b = new Float64Array(k);
+    for (let i = 0; i < n; i++) for (let r = 0; r < k; r++) {
+      b[r] += wt[i] * pts[i][r] * v[i];
+      for (let c = 0; c < k; c++) A[r][c] += wt[i] * pts[i][r] * pts[i][c];
+    }
+    for (let r = 0; r < k; r++) A[r][r] += 1e-6;
+    const coef = solve(A, b);
+    for (let i = 0; i < n; i++) { let s = 0; for (let r = 0; r < k; r++) s += coef[r] * pts[i][r]; fit[i] = s; }
+    for (let i = 0; i < n; i++) {
+      const rel = (v[i] - fit[i]) / Math.max(1, Math.abs(fit[i]));
+      wt[i] = (darkDesign ? -rel : rel) > 0.08 ? 0.02 : 1;   // far to the design side: not shade
+    }
+  }
+  return fit;
+}
+
+// Gaussian elimination with partial pivoting (tiny systems).
+function solve(A, b) {
+  const n = b.length, M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    const d = M[c][c] || 1e-12;
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / d; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((row, i) => row[n] / (row[i] || 1e-12));
+}
+
+// The median colour of a small square around (x, y) in an RGBA image: a picked colour that a
+// single noisy pixel can't throw off.
+export function sampleColor(rgba, w, h, x, y, r = 3) {
+  const ch = [[], [], []];
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const xi = Math.min(w - 1, Math.max(0, Math.round(x) + dx)), yi = Math.min(h - 1, Math.max(0, Math.round(y) + dy));
+    const j = (yi * w + xi) * 4;
+    for (let k = 0; k < 3; k++) ch[k].push(rgba[j + k]);
+  }
+  return ch.map((c) => c.sort((a, b) => a - b)[c.length >> 1]);
 }
 
 const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };

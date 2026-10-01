@@ -27,7 +27,9 @@ jobs:
           set -euo pipefail
           npm ci --no-audit --no-fund
           npm test
-          npm run build
+          # Click-to-select: the pinned model files (SHA-256 checked), copied into dist/ by the build.
+          node scripts/fetch-models.mjs
+          node scripts/build.mjs --require-models
           # The production server: health, the page and the engine are all served.
           PORT=8099 node scripts/serve.mjs --dist &
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8099/healthz >/dev/null 2>&1 && break; sleep 0.2; done
@@ -35,6 +37,10 @@ jobs:
           curl -fsS http://127.0.0.1:8099/ | grep -q 'Download DXF'
           curl -fsS -o /dev/null http://127.0.0.1:8099/core/pipeline.js
           curl -fsS -o /dev/null http://127.0.0.1:8099/worker.js
+          curl -fsS -o /dev/null http://127.0.0.1:8099/segment/worker.js
+          curl -fsS -o /dev/null http://127.0.0.1:8099/vendor/ort/ort-wasm-simd-threaded.wasm
+          curl -fsS -o /dev/null http://127.0.0.1:8099/models/slimsam-77/vision_encoder.onnx
+          curl -fsSI http://127.0.0.1:8099/ | grep -qi 'cross-origin-embedder-policy: require-corp'
       - name: Notify Deploy Manager
         if: >-
           vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' &&

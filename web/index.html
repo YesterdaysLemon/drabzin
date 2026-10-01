@@ -1,128 +1,159 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Drabzin Vectorizer</title>
   <meta name="description" content="Turn a picture of a door or gate design into a DXF file for laser and CNC cutting.">
+  <meta name="color-scheme" content="light dark">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d2a36'/%3E%3Cpath d='M16 4l3.5 8.5L28 16l-8.5 3.5L16 28l-3.5-8.5L4 16l8.5-3.5z' fill='none' stroke='%23e9b44c' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
+  <script src="boot.js"></script>
 </head>
 <body>
   <header class="top">
-    <div class="brand">
+    <div class="brand" dir="ltr">
       <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4l3.5 8.5L28 16l-8.5 3.5L16 28l-3.5-8.5L4 16l8.5-3.5z"/></svg>
       <span><b>Drabzin</b> Vectorizer</span>
     </div>
     <div class="top-actions">
-      <button id="exportDxf" class="primary" disabled>Download DXF</button>
-      <button id="exportSvg" disabled title="Download the same lines as an SVG file">SVG</button>
+      <label class="lang-pick" data-i18n-title="top.lang">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.8 2.6 15.2 0 18M12 3c-2.6 2.8-2.6 15.2 0 18"/></svg>
+        <select id="lang" data-i18n-aria-label="top.lang"></select>
+      </label>
+      <button id="theme" class="icon-btn" type="button">
+        <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+      <button id="feedback" type="button" class="fb-open">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/></svg>
+        <span data-i18n="top.feedback">Feedback</span>
+      </button>
+      <button id="exportDxf" class="primary" disabled data-i18n="top.dxf">Download DXF</button>
+      <button id="exportSvg" disabled data-i18n-title="top.svg.title" title="Download the same lines as an SVG file">SVG</button>
     </div>
   </header>
+  <p class="mt-note" id="mtNote" hidden><span data-i18n="mt.note"></span> <button type="button" id="toEnglish" lang="en" dir="ltr">English</button></p>
+  <nav class="designs" id="designs" data-i18n-aria-label="designs.aria" aria-label="Open images" hidden></nav>
 
   <main class="layout">
     <aside class="panel" id="panel">
       <section class="step">
-        <h2><span>1</span>Image</h2>
+        <h2><span>1</span><b data-i18n="step.image">Image</b></h2>
         <label class="drop" id="drop">
-          <input type="file" id="file" accept="image/*">
-          <strong>Choose an image</strong>
-          <small>or drag it here, or paste it (Ctrl+V).<br>A photo, scan or screenshot is fine.</small>
+          <input type="file" id="file" accept="image/*" multiple>
+          <strong data-i18n="drop.title">Choose an image</strong>
+          <small data-i18n-html="drop.sub">or drag it here, or paste it (Ctrl+V).<br>A photo, scan or screenshot is fine.</small>
         </label>
         <p class="filename" id="filename"></p>
+        <p class="hint" data-i18n="image.tabs">Each image opens in its own tab. Your work on each one is saved in this browser.</p>
       </section>
 
       <section class="step" data-needs-image>
-        <h2><span>2</span>Crop</h2>
-        <p class="hint">Click <b>Move corners</b>, then drag the 4 dots to the edges of the design. Leave out text and measurements.</p>
-        <p class="hint">Photo taken at an angle? Put the dots on the real corners of the panel. The app makes it straight.</p>
+        <h2><span>2</span><b data-i18n="step.crop">Crop</b></h2>
+        <p class="hint" data-i18n-html="crop.hintFind">Click <b>Find the design</b>, then click a plain spot near the middle of the panel, paper or board. The 4 corners jump to its edges.</p>
+        <p class="hint" data-i18n-html="crop.hintMove">Or click <b>Move corners</b> and drag the 4 dots yourself. Leave out text and measurements. Photo taken at an angle? Put the dots on the real corners of the panel. The app makes it straight.</p>
         <div class="row">
-          <button id="cropEdit" class="toggle">Move corners</button>
-          <button id="cropReset">Use whole image</button>
+          <button id="segPick" class="toggle" aria-pressed="false" data-i18n="crop.find">Find the design</button>
+          <button id="cropEdit" class="toggle" data-i18n="crop.move">Move corners</button>
+          <button id="cropReset" data-i18n="crop.whole">Use whole image</button>
         </div>
+        <p class="hint seg-status" id="segStatus" role="status"></p>
+        <label class="check" id="segMaskRow" hidden><input type="checkbox" id="segMask" checked> <span data-i18n="crop.ignore">Ignore everything outside it</span></label>
       </section>
 
       <section class="step" data-needs-image>
-        <h2><span>3</span>Real size</h2>
-        <p class="hint">How big is the real design? Enter its width or its height.</p>
+        <h2><span>3</span><b data-i18n="step.size">Real size</b></h2>
+        <p class="hint" data-i18n="size.hint">How big is the real design? Enter its width or its height.</p>
         <div class="row">
           <label class="field">
-            <select id="sizeAxis" aria-label="Width or height"><option value="width">Width</option><option value="height">Height</option></select>
+            <select id="sizeAxis" data-i18n-aria-label="size.axis" aria-label="Width or height"><option value="width" data-i18n="size.width">Width</option><option value="height" data-i18n="size.height">Height</option></select>
           </label>
           <label class="field grow">
-            <span class="unit"><input type="number" id="sizeMM" value="1000" min="1" step="1" aria-label="Size in millimetres"> mm</span>
+            <span class="unit"><input type="number" id="sizeMM" value="1000" min="1" step="1" data-i18n-aria-label="size.mm" aria-label="Size in millimetres"> mm</span>
           </label>
         </div>
         <p class="hint" id="sizeOut"></p>
       </section>
 
       <section class="step" data-needs-image>
-        <h2><span>4</span>Type of design</h2>
+        <h2><span>4</span><b data-i18n="step.type">Type of design</b></h2>
         <div class="seg" id="mode" role="radiogroup">
-          <button data-v="auto" class="on" role="radio" title="The app chooses for you">Auto</button>
-          <button data-v="outline" role="radio" title="Cut around filled shapes">Solid shapes</button>
-          <button data-v="centreline" role="radio" title="Cut along drawn lines">Line drawing</button>
-          <button data-v="geometric" role="radio" title="Straight bars with exact angles">Geometric <span class="tag">beta</span></button>
+          <button data-v="auto" class="on" role="radio" data-i18n="mode.auto" data-i18n-title="mode.auto.title">Auto</button>
+          <button data-v="outline" role="radio" data-i18n="mode.outline" data-i18n-title="mode.outline.title">Solid shapes</button>
+          <button data-v="centreline" role="radio" data-i18n="mode.centreline" data-i18n-title="mode.centreline.title">Line drawing</button>
+          <button data-v="geometric" role="radio" data-i18n-title="mode.geometric.title"><span data-i18n="mode.geometric">Geometric</span> <span class="tag" data-i18n="mode.beta">beta</span></button>
         </div>
         <p class="hint" id="modeHint"></p>
 
-        <label class="check outline-only"><input type="checkbox" id="straight"> Make edges straight (for star and polygon patterns)</label>
+        <label class="check outline-only"><input type="checkbox" id="straight"> <span data-i18n="mode.straight">Make edges straight (for star and polygon patterns)</span></label>
         <div class="geo-only">
-          <p class="hint">Makes every line straight and every angle exact. Use it for photos of repeating lattice patterns. For a clean drawing, Solid shapes with <b>Make edges straight</b> usually works better.</p>
+          <p class="hint" data-i18n-html="geo.hint">Makes every line straight and every angle exact.</p>
           <div class="row">
-            <label class="field">Repeats across<input type="number" id="nx" value="1" min="1" max="20"></label>
-            <label class="field">Repeats down<input type="number" id="ny" value="1" min="1" max="40"></label>
+            <label class="field"><span data-i18n="geo.across">Repeats across</span><input type="number" id="nx" value="1" min="1" max="20"></label>
+            <label class="field"><span data-i18n="geo.down">Repeats down</span><input type="number" id="ny" value="1" min="1" max="40"></label>
           </div>
           <div class="row">
-            <label class="field">Repeats around the centre
+            <label class="field"><span data-i18n="geo.around">Repeats around the centre</span>
               <select id="order">
-                <option value="1">none</option><option value="2">2 times</option><option value="4">4 times</option>
-                <option value="6">6 times</option><option value="8">8 times</option><option value="10">10 times</option>
-                <option value="12">12 times</option><option value="16">16 times</option>
+                <option value="1" data-i18n="geo.none">none</option><option value="2" data-i18n="geo.times" data-n="2">2 times</option><option value="4" data-i18n="geo.times" data-n="4">4 times</option>
+                <option value="6" data-i18n="geo.times" data-n="6">6 times</option><option value="8" data-i18n="geo.times" data-n="8">8 times</option><option value="10" data-i18n="geo.times" data-n="10">10 times</option>
+                <option value="12" data-i18n="geo.times" data-n="12">12 times</option><option value="16" data-i18n="geo.times" data-n="16">16 times</option>
               </select>
             </label>
-            <label class="check"><input type="checkbox" id="mirror"> Mirror (both sides the same)</label>
+            <label class="check"><input type="checkbox" id="mirror"> <span data-i18n="geo.mirror">Mirror (both sides the same)</span></label>
           </div>
           <div class="row">
-            <label class="field">Line directions
+            <label class="field"><span data-i18n="geo.directions">Line directions</span>
               <select id="snapDeg">
-                <option value="">auto</option><option value="90">every 90°</option><option value="45">every 45°</option>
-                <option value="30">every 30°</option><option value="22.5">every 22.5°</option><option value="18">every 18°</option>
-                <option value="15">every 15°</option><option value="0">any angle</option>
+                <option value="" data-i18n="geo.auto">auto</option><option value="90" data-i18n="geo.every" data-n="90">every 90°</option><option value="45" data-i18n="geo.every" data-n="45">every 45°</option>
+                <option value="30" data-i18n="geo.every" data-n="30">every 30°</option><option value="22.5" data-i18n="geo.every" data-n="22.5">every 22.5°</option><option value="18" data-i18n="geo.every" data-n="18">every 18°</option>
+                <option value="15" data-i18n="geo.every" data-n="15">every 15°</option><option value="0" data-i18n="geo.any">any angle</option>
               </select>
             </label>
-            <label class="field">Bar width
-              <span class="unit"><input type="number" id="bandWidthMM" placeholder="auto" min="0" step="0.5"> mm</span>
+            <label class="field"><span data-i18n="geo.bar">Bar width</span>
+              <span class="unit"><input type="number" id="bandWidthMM" data-i18n-placeholder="geo.auto" placeholder="auto" min="0" step="0.5"> mm</span>
             </label>
           </div>
         </div>
       </section>
 
       <section class="step" data-needs-image>
-        <h2><span>5</span>Fix the result</h2>
-        <label class="check"><input type="checkbox" id="invert"> Swap filled and empty areas</label>
-        <label class="slider">Colour cut-off <output id="levelOut"></output>
+        <h2><span>5</span><b data-i18n="step.fix">Fix the result</b></h2>
+        <p class="hint" data-i18n="pick.hint">Wrong parts cut? Show the app the colours. Click a button, then click that colour in the picture.</p>
+        <div class="picks">
+          <button id="pickDesign" class="toggle pick" aria-pressed="false"><i class="swatch" id="designSwatch"></i><span data-i18n="pick.design">Design colour</span></button>
+          <button id="pickBg" class="toggle pick" aria-pressed="false"><i class="swatch" id="bgSwatch"></i><span data-i18n="pick.bg">Background colour</span></button>
+        </div>
+        <p class="hint pick-status" id="pickStatus"></p>
+        <label class="check"><input type="checkbox" id="adaptive"> <span data-i18n="fix.uneven">Uneven light (part of the photo is in shadow)</span></label>
+        <label class="check"><input type="checkbox" id="invert"> <span data-i18n="fix.invert">Swap filled and empty areas</span></label>
+        <label class="slider"><span data-i18n="fix.level">Colour cut-off</span> <output id="levelOut"></output>
           <input type="range" id="level" min="0.1" max="0.9" step="0.01" value="0.4">
         </label>
-        <p class="hint">Parts missing? Move it left. Background included? Move it right.</p>
-        <label class="slider">Smoothness <output id="smoothOut"></output>
+        <p class="hint" data-i18n="fix.levelHint">Parts missing? Move it left. Background included? Move it right.</p>
+        <label class="slider"><span data-i18n="fix.smooth">Smoothness</span> <output id="smoothOut"></output>
           <input type="range" id="smooth" min="0" max="5" step="0.1" value="1.2">
         </label>
-        <p class="hint">Higher makes curves smoother but removes small detail.</p>
+        <p class="hint" data-i18n="fix.smoothHint">Higher makes curves smoother but removes small detail.</p>
         <details>
-          <summary>More settings</summary>
-          <label class="slider">Sharp corner angle <output id="cornerOut"></output>
+          <summary data-i18n="fix.more">More settings</summary>
+          <label class="slider"><span data-i18n="fix.corner">Sharp corner angle</span> <output id="cornerOut"></output>
             <input type="range" id="cornerDeg" min="20" max="120" step="1" value="55">
           </label>
-          <p class="hint">Corners sharper than this stay sharp. Others are rounded.</p>
-          <label class="field">Remove dots smaller than
-            <span class="unit"><input type="number" id="speckMM2" placeholder="auto" min="0" step="0.5"> mm²</span>
+          <p class="hint" data-i18n="fix.cornerHint">Corners sharper than this stay sharp. Others are rounded.</p>
+          <label class="field"><span data-i18n="fix.speck">Remove dots smaller than</span>
+            <span class="unit"><input type="number" id="speckMM2" data-i18n-placeholder="geo.auto" placeholder="auto" min="0" step="0.5"> mm²</span>
           </label>
-          <label class="field cl-only">Close gaps in lines up to
-            <span class="unit"><input type="number" id="bridgeMM" placeholder="auto" min="0" step="0.5"> mm</span>
+          <label class="field cl-only"><span data-i18n="fix.bridge">Close gaps in lines up to</span>
+            <span class="unit"><input type="number" id="bridgeMM" data-i18n-placeholder="geo.auto" placeholder="auto" min="0" step="0.5"> mm</span>
           </label>
-          <label class="field">Quality
-            <select id="maxSide"><option value="1600">fast</option><option value="2400" selected>normal</option><option value="3600">best (slower)</option></select>
+          <label class="field"><span data-i18n="fix.curves">Curves in the file</span>
+            <select id="arcs"><option value="1" selected data-i18n="fix.arcs">Arcs (best for CNC and laser)</option><option value="0" data-i18n="fix.lines">Many short straight lines</option></select>
+          </label>
+          <p class="hint" data-i18n="fix.curvesHint">Arcs make smooth cuts and small files. Choose short lines only if your machine cannot read arcs.</p>
+          <label class="field"><span data-i18n="fix.quality">Quality</span>
+            <select id="maxSide"><option value="1600" data-i18n="fix.fast">fast</option><option value="2400" selected data-i18n="fix.normal">normal</option><option value="3600" data-i18n="fix.best">best (slower)</option></select>
           </label>
         </details>
       </section>
@@ -130,13 +161,13 @@
 
     <section class="stage">
       <div class="tabs" role="tablist">
-        <button data-view="photo" class="on" title="Your image. Move the crop corners here.">Original</button>
-        <button data-view="mask" title="Black is the design, white is the background">Black &amp; white</button>
-        <button data-view="overlay" title="The cut lines on top of your image">Overlay</button>
-        <button data-view="result" title="Only the cut lines, as they will be in the file">Result</button>
+        <button data-view="photo" class="on" data-i18n="view.photo" data-i18n-title="view.photo.title">Original</button>
+        <button data-view="mask" data-i18n="view.mask" data-i18n-title="view.mask.title">Black &amp; white</button>
+        <button data-view="overlay" data-i18n="view.overlay" data-i18n-title="view.overlay.title">Overlay</button>
+        <button data-view="result" data-i18n="view.result" data-i18n-title="view.result.title">Result</button>
         <span class="spacer"></span>
-        <span class="view-help">Scroll to zoom. Drag to move.</span>
-        <button id="fit" title="Show the whole design">Fit</button>
+        <span class="view-help" data-i18n="view.help">Scroll to zoom. Drag to move.</span>
+        <button id="fit" data-i18n="view.fit" data-i18n-title="view.fit.title">Fit</button>
       </div>
       <div class="viewer" id="viewer">
         <svg id="svg" xmlns="http://www.w3.org/2000/svg">
@@ -146,32 +177,70 @@
             <image id="cropImg" preserveAspectRatio="none" draggable="false"/>
             <g id="paths"></g>
             <g id="cropUI"></g>
+            <g id="endsUI"></g>
+            <g id="picksUI"></g>
           </g>
         </svg>
         <div class="empty" id="empty">
-          <p class="empty-title">Turn a picture of a design into a DXF file for cutting.</p>
+          <p class="empty-title" data-i18n="empty.title">Turn a picture of a design into a DXF file for cutting.</p>
           <ol class="howto">
-            <li>Choose an image of the design.</li>
-            <li>Move the 4 corners onto the design.</li>
-            <li>Enter the real width or height.</li>
-            <li>Check the red cut lines.</li>
-            <li>Click <b>Download DXF</b>. It opens in AutoCAD.</li>
+            <li data-i18n="empty.1">Choose an image of the design.</li>
+            <li data-i18n="empty.2">Move the 4 corners onto the design.</li>
+            <li data-i18n="empty.3">Enter the real width or height.</li>
+            <li data-i18n="empty.4">Check the red cut lines.</li>
+            <li data-i18n-html="empty.5">Click <b>Download DXF</b>. It opens in AutoCAD.</li>
           </ol>
-          <p class="hint">Your image stays on your computer. It is never uploaded.</p>
+          <p class="hint" data-i18n="empty.private">Your image stays on your computer. It is never uploaded.</p>
         </div>
-        <div class="busy" id="busy" hidden>Working…</div>
+        <div class="busy" id="busy" hidden data-i18n="busy">Working…</div>
       </div>
       <div class="status" id="status">
         <div class="stats" id="stats"></div>
         <div class="sel" id="sel" hidden>
           <span id="selInfo"></span>
-          <button id="delSel">Delete</button>
-          <button id="undo" disabled>Undo</button>
+          <button id="delSel" data-i18n="sel.delete">Delete</button>
+          <button id="undo" disabled data-i18n="sel.undo">Undo</button>
         </div>
         <ul class="warnings" id="warnings"></ul>
       </div>
     </section>
   </main>
+
+  <dialog class="fb" id="fbDialog" aria-labelledby="fbTitle">
+    <form id="fbForm" method="dialog" novalidate>
+      <h2 id="fbTitle" data-i18n="fb.title">Send a message</h2>
+      <p class="hint" data-i18n="fb.intro">Write to the person who makes this app. Questions, problems and ideas are all welcome.</p>
+      <fieldset class="fb-kinds">
+        <legend data-i18n="fb.kind">What is it about?</legend>
+        <label><input type="radio" name="kind" value="problem" checked> <span data-i18n="fb.kind.problem">Something does not work</span></label>
+        <label><input type="radio" name="kind" value="idea"> <span data-i18n="fb.kind.idea">An idea or a wish</span></label>
+        <label><input type="radio" name="kind" value="question"> <span data-i18n="fb.kind.question">A question</span></label>
+        <label><input type="radio" name="kind" value="other"> <span data-i18n="fb.kind.other">Something else</span></label>
+      </fieldset>
+      <label class="field"><span data-i18n="fb.message">Your message</span>
+        <textarea id="fbMessage" rows="6" maxlength="5000" data-i18n-placeholder="fb.placeholder" placeholder="What did you try? What happened? What did you expect?"></textarea>
+      </label>
+      <label class="field"><span data-i18n="fb.ease">How easy is the app to use?</span>
+        <select id="fbEase">
+          <option value="" data-i18n="fb.ease.skip">No answer</option>
+          <option value="easy" data-i18n="fb.ease.easy">Easy</option>
+          <option value="ok" data-i18n="fb.ease.ok">OK</option>
+          <option value="hard" data-i18n="fb.ease.hard">Hard</option>
+        </select>
+      </label>
+      <label class="field"><span data-i18n="fb.email">Your email (optional, so we can answer you)</span>
+        <input type="email" id="fbEmail" maxlength="200" autocomplete="email" dir="ltr">
+      </label>
+      <!-- Left empty by people; bots fill every field. -->
+      <label class="fb-trap" aria-hidden="true">Website <input type="text" id="fbWebsite" tabindex="-1" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" id="fbSettings" checked> <span data-i18n="fb.settings">Add my current settings to help find problems (not the picture)</span></label>
+      <p class="fb-status" id="fbStatus" role="status"></p>
+      <div class="fb-actions">
+        <button type="button" id="fbCancel" data-i18n="fb.cancel">Cancel</button>
+        <button type="submit" id="fbSend" class="primary" data-i18n="fb.send">Send</button>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="app.js"></script>
 </body>
 </html>
