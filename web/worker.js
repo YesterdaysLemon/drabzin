@@ -6,9 +6,9 @@ let src = null;      // { rgba, w, h }
 let prepCache = null; // { key, prep }
 
 function prepFor(p) {
-  const key = JSON.stringify([p.corners, p.maxSide, p.invert, p.blur, p.sizeMM, p.sizeAxis]);
+  const key = JSON.stringify([p.corners, p.maxSide, p.invert, p.blur, p.sizeMM, p.sizeAxis, p.pickDesign, p.pickBg, p.adaptive, p.useMask && p.maskKey]);
   if (prepCache?.key === key) return prepCache.prep;
-  const prep = prepareInk(src.rgba, src.w, src.h, p);
+  const prep = prepareInk(src.rgba, src.w, src.h, { ...p, mask: p.useMask ? src.mask : null });
   prepCache = { key, prep };
   return prep;
 }
@@ -77,6 +77,12 @@ self.onmessage = (e) => {
       self.postMessage({ id, ok: true });
       return;
     }
+    if (cmd === 'mask') {   // the selected object (click to select), or null
+      if (src) src.mask = e.data.mask;
+      prepCache = null;
+      self.postMessage({ id, ok: true });
+      return;
+    }
     if (cmd === 'process') {
       const p = e.data.params;
       const t0 = performance.now();
@@ -91,7 +97,7 @@ self.onmessage = (e) => {
       const crop = cropPreview(prep);
       self.postMessage({
         id, ok: true, mode, suggestion: suggestion.mode, ms: Math.round(performance.now() - t0),
-        result: res, preview, crop, cropW: prep.w, cropH: prep.h,
+        result: res, preview, crop, cropW: prep.w, cropH: prep.h, colors: prep.colors,
       }, [preview.data.buffer, crop.data.buffer]);
     }
   } catch (err) {

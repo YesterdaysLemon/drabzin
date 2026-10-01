@@ -1,0 +1,33 @@
+{
+  "id": "slimsam-77",
+  "name": "SlimSAM-77 (uniform pruning of Segment Anything)",
+  "license": "Apache-2.0",
+  "source": {
+    "repo": "Xenova/slimsam-77-uniform",
+    "revision": "5850ab45f587c112167512ffef949107115e26a0",
+    "url": "https://huggingface.co/Xenova/slimsam-77-uniform"
+  },
+  "files": {
+    "encoder": {
+      "from": "onnx/vision_encoder.onnx",
+      "name": "vision_encoder.onnx",
+      "bytes": 23276014,
+      "sha256": "9f8433273a6750b587779baa0cf5508111001bf7e7acfcf585d370139fd366d0"
+    },
+    "decoder": {
+      "from": "onnx/prompt_encoder_mask_decoder.onnx",
+      "name": "prompt_encoder_mask_decoder.onnx",
+      "bytes": 16557892,
+      "sha256": "f4514391764fbd56e08e119060d874ecd7d52994bfb1968af159e12d4943b5bb"
+    }
+  },
+  "runtime": {
+    "library": "onnxruntime-web",
+    "version": "1.30.0",
+    "files": {
+      "ort-wasm-simd-threaded.wasm": 14239897,
+      "ort-wasm-simd-threaded.jsep.wasm": 28312028
+    }
+  },
+  "note": "Full-precision (fp32) weights. The 8-bit quantised files are about half the size but segment visibly worse on photographs of perforated metal, so they are not used."
+}

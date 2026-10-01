@@ -4,7 +4,8 @@ import { thin, tracePolylines, pruneBranches } from './skeleton.js';
 import * as G from './geometry.js';
 import { buildCutGeometry } from './bands.js';
 import { findLines } from './lines.js';
-import { traceOutlines, smoothOpen, simplifyOpen, smoothClosed, simplifyClosed, joinPaths } from './contour.js';
+import { fitPath, sampleSegs } from './fit.js';
+import { traceOutlines, smoothOpen, simplifyOpen, smoothClosed, simplifyClosed, joinPaths, mendEnds, danglingEnds } from './contour.js';
 
 export const DEFAULTS = {
   workSize: 1400,      // long side of the working image, px
@@ -156,7 +157,22 @@ export const SHAPE_DEFAULTS = {
   straight: false,     // outline: straight edges between corners (geometric/polygonal designs)
   speckMM2: null,      // ignore blobs smaller than this (mm^2), null = auto
   bridgeMM: null,      // centreline: join loose ends closer than this (mm), null = 3 strokes
+  pickDesign: null,    // {x, y} in source px: a spot on the design, its colour is "material"
+  pickBg: null,        // {x, y} in source px: a spot on the background
+  adaptive: false,     // uneven light: divide out the light falling on the background
+  mask: null,          // { w, h, data: Uint8Array 1 = object } over the source (any scale): ignore the rest
+  arcs: true,          // curves as true arcs (lines + arcs, like CAD) instead of many short lines
+  arcTolPx: 0.3,       // how far an arc or line may stray from the traced edge, px of the crop
 };
+
+// Lines and arcs through a traced path (px), in mm. `pts` is resampled from them for drawing,
+// hit testing and areas; the exporters write `segs`.
+function toSegs(dense, corners, closed, mmPerPx, p) {
+  const mm = dense.map((v) => ({ x: v.x * mmPerPx, y: v.y * mmPerPx }));
+  const tol = Math.max(0.02, p.arcTolPx * mmPerPx);
+  const segs = fitPath(mm, { closed, tol, corners });
+  return { segs, pts: sampleSegs(segs, Math.max(0.01, tol / 4), closed) };
+}
 
 export function prepareInk(rgba, w, h, p) {
   const quad = p.corners ?? [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
@@ -165,11 +181,29 @@ export function prepareInk(rgba, w, h, p) {
   const s = Math.min(1, p.maxSide / Math.max(qw, qh));
   const outW = Math.max(2, Math.round(qw * s)), outH = Math.max(2, Math.round(qh * s));
   const crop = R.warpQuadRGBA(rgba, w, h, quad, outW, outH);
-  let ink = R.inkFromRGBA(crop, outW, outH);
+  // Picked colours come from the full-size source, a few px square, so one noisy pixel can't decide.
+  const pick = (pt) => pt && R.sampleColor(rgba, w, h, pt.x, pt.y, Math.max(2, Math.round(Math.max(w, h) / 500)));
+  let bg = pick(p.pickBg), design = pick(p.pickDesign), lit = crop;
+  if (p.adaptive) {
+    const even = R.evenLight(crop, outW, outH, { bg, design });
+    lit = even.rgba;
+    bg = bg ?? even.bg;
+    // The design was picked in whatever light fell on it: read it again in the evenly lit copy.
+    const at = p.pickDesign && R.quadToCrop(quad, p.pickDesign, outW, outH);
+    if (at && at.x >= 0 && at.y >= 0 && at.x < outW && at.y < outH) design = R.sampleColor(lit, outW, outH, at.x, at.y, 2);
+  }
+  let ink = R.inkFromRGBA(lit, outW, outH, { bg, design });
+  const colors = { bg: ink.bg, design: pick(p.pickDesign) || null };   // as picked, for the page's swatches
   if (p.invert) ink = R.invert(ink);
+  if (p.mask) {
+    // The selected object only: outside it everything is background, whatever its colour.
+    const k = p.mask.w / w, m = { w: p.mask.w, h: p.mask.h, data: Float32Array.from(p.mask.data) };
+    const inside = R.warpQuad(m, quad.map((c) => ({ x: c.x * k, y: c.y * k })), outW, outH);
+    for (let i = 0; i < ink.data.length; i++) ink.data[i] *= inside.data[i];
+  }
   ink = R.gaussianBlur(ink, p.blur);
   const mmPerPx = p.sizeAxis === 'height' ? p.sizeMM / outH : p.sizeMM / outW;
-  return { ink, crop, w: outW, h: outH, mmPerPx };
+  return { ink, crop, w: outW, h: outH, mmPerPx, colors };
 }
 
 export function outline(prep, params = {}) {
@@ -182,10 +216,11 @@ export function outline(prep, params = {}) {
     level: p.level, minArea, minHoleArea: minArea * 3, minHoleWidth: 2.5, sigma: p.smooth,
     cornerDeg: p.straight ? Math.min(p.cornerDeg, 30) : p.cornerDeg, tol: p.straight ? 1.2 : 0.15,
   });
-  const paths = res.paths.map((q) => ({
-    pts: q.pts.map((v) => ({ x: v.x * mmPerPx, y: v.y * mmPerPx })),
-    closed: true, kind: q.kind, layer: 'CUT',
-  }));
+  // Straight mode keeps its hard-simplified polygons: straight edges between corners, no arcs.
+  const arcs = p.arcs && !p.straight;
+  const paths = res.paths.map((q) => (arcs
+    ? { ...toSegs(q.dense, q.corners, true, mmPerPx, p), closed: true, kind: q.kind, layer: 'CUT' }
+    : { pts: q.pts.map((v) => ({ x: v.x * mmPerPx, y: v.y * mmPerPx })), closed: true, kind: q.kind, layer: 'CUT' }));
   return { paths, pieces: res.pieces, holes: res.holes, widthMM: ink.w * mmPerPx, heightMM: ink.h * mmPerPx };
 }
 
@@ -199,24 +234,27 @@ export function centreline(prep, params = {}) {
   const stroke = Math.max(1, R.strokeWidth(mask));
   const traced = pruneBranches(tracePolylines(thin(mask)), Math.max(3, stroke * 2));
   const bridge = p.bridgeMM != null ? p.bridgeMM / mmPerPx : stroke * 3;
-  const joined = joinPaths(traced.map((pts) => ({ pts, closed: false })), { tol: Math.max(1.5, stroke * 0.75), gap: bridge });
-  const lines = joined.map((j) => (j.closed ? j.pts.concat([j.pts[0]]) : j.pts));
+  // Short gaps join to the nearest end; longer ones (a faint stretch of line) only between ends
+  // that point at each other.
+  const joined = joinPaths(traced.map((pts) => ({ pts, closed: false })), {
+    tol: Math.max(1.5, stroke * 0.75), gap: bridge, reach: p.bridgeMM != null ? bridge : bridge * 8, aimDeg: 35, aimBack: Math.max(6, stroke * 3),
+  });
+  // Then loose ends: stubs at junctions go, ends that stop just short of a line meet it.
+  const mended = mendEnds(joined, { touch: Math.max(1.5, stroke), reach: Math.max(bridge, stroke * 5), spur: stroke * 6 });
+  const lines = mended.map((j) => (j.closed ? j.pts.concat([j.pts[0]]) : j.pts));
   const paths = [];
   for (const line of lines) {
     if (line.length < 2) continue;
     const first = line[0], last = line[line.length - 1];
     const closed = line.length > 3 && Math.hypot(first.x - last.x, first.y - last.y) < 1.5;
-    let pts;
-    if (closed) {
-      const r = smoothClosed(line.slice(0, -1), { sigma: Math.max(p.smooth, stroke * 0.4), cornerDeg: p.cornerDeg });
-      pts = simplifyClosed(r.pts, 0.15, r.corners);
-    } else {
-      const r = smoothOpen(line, { sigma: Math.max(p.smooth, stroke * 0.4), cornerDeg: p.cornerDeg });
-      pts = simplifyOpen(r.pts, 0.15, r.corners);
-    }
+    const sm = { sigma: Math.max(p.smooth, stroke * 0.4), cornerDeg: p.cornerDeg };
+    const r = closed ? smoothClosed(line.slice(0, -1), sm) : smoothOpen(line, sm);
+    if (p.arcs) { paths.push({ ...toSegs(r.pts, r.corners, closed, mmPerPx, p), closed, layer: 'CUT' }); continue; }
+    const pts = closed ? simplifyClosed(r.pts, 0.15, r.corners) : simplifyOpen(r.pts, 0.15, r.corners);
     paths.push({ pts: pts.map((v) => ({ x: v.x * mmPerPx, y: v.y * mmPerPx })), closed, layer: 'CUT' });
   }
-  return { paths, strokeMM: stroke * mmPerPx, widthMM: ink.w * mmPerPx, heightMM: ink.h * mmPerPx };
+  const looseTol = Math.max(1.5, stroke) * mmPerPx;
+  return { paths, looseEnds: danglingEnds(paths, looseTol), looseTol, strokeMM: stroke * mmPerPx, widthMM: ink.w * mmPerPx, heightMM: ink.h * mmPerPx };
 }
 
 // Guess the right mode: thin, even strokes with little ink coverage = a line drawing.

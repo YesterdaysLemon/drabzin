@@ -54,12 +54,13 @@ button.toggle.on { background: var(--ink); color: var(--surface); border-color: 
 }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 16px; }
 .brand svg { width: 24px; height: 24px; fill: none; stroke: var(--accent); stroke-width: 2.4; }
-.top-actions { display: flex; gap: 8px; }
+.top-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 
 .layout { flex: 1; display: grid; grid-template-columns: 330px 1fr; min-height: 0; }
 .panel { overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface); padding: 6px 0 24px; }
 .step { padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .step h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.step h2 b { font: inherit; }
 .step h2 span { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); font-size: 11px; color: var(--ink); }
 body:not(.has-image) [data-needs-image] { opacity: 0.4; pointer-events: none; }
 .hint { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
@@ -106,9 +107,9 @@ body.mode-centreline .cl-only { display: flex; }
 .viewer svg.panning { cursor: grabbing; }
 .empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; color: var(--muted); pointer-events: none; padding: 16px; }
 .empty-title { color: var(--ink); font-size: 16px; font-weight: 600; margin: 0 0 12px; }
-.howto { text-align: left; margin: 0 0 14px; padding-left: 22px; line-height: 1.9; color: var(--ink); }
+.howto { text-align: start; margin: 0 0 14px; padding-inline-start: 22px; line-height: 1.9; color: var(--ink); }
 .tabs .view-help { color: var(--muted); font-size: 12px; margin-right: 4px; }
-.busy { position: absolute; top: 10px; right: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; }
+.busy { position: absolute; top: 10px; inset-inline-end: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; }
 
 #paths path { vector-effect: non-scaling-stroke; fill: none; stroke-width: 1.4; }
 #paths path.outer { stroke: var(--cut); }
@@ -121,6 +122,15 @@ body.mode-centreline .cl-only { display: flex; }
 #paths .fill { fill: var(--ink); stroke: none; pointer-events: none; }
 .view-result #paths path:not(.fill):not(.hit):not(.selected) { stroke-width: 1; }
 
+.picks { display: grid; gap: 6px; margin: 6px 0; }
+.picks button { display: flex; align-items: center; gap: 8px; text-align: start; }
+.swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line); flex: none; background: var(--surface-2); }
+.swatch.auto { background: repeating-linear-gradient(45deg, var(--surface-2) 0 3px, var(--line) 3px 5px); }
+.pick-status button { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: inherit; }
+.viewer.picking svg { cursor: crosshair; }
+#endsUI circle { fill: none; stroke: var(--cut); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+#picksUI circle { stroke: var(--surface); stroke-width: 2.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+#picksUI circle.ring { fill: none; stroke: var(--ink); stroke-width: 1; }
 #cropUI polygon { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 #cropUI circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: move; }
 #cropUI .shade { fill: rgba(0, 0, 0, 0.35); fill-rule: evenodd; stroke: none; }
@@ -147,4 +157,59 @@ body.mode-centreline .cl-only { display: flex; }
   .tabs { gap: 4px; padding: 6px 8px; }
   .tabs button { padding: 6px 9px; font-size: 13px; }
   .top-actions button { padding: 6px 10px; }
+}
+
+.designs { display: flex; gap: 6px; align-items: center; padding: 6px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; }
+.designs .design { display: flex; align-items: center; flex: none; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); max-width: 220px; }
+.designs .design.on { border-color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+.designs .design button { border: 0; background: none; border-radius: 8px; }
+.designs .open { padding-block: 5px; padding-inline: 10px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.designs .design.on .open { font-weight: 600; }
+.designs .close { padding: 5px 9px; color: var(--muted); font-size: 16px; line-height: 1; }
+.designs .close:hover { color: var(--ink); }
+.designs .add { flex: none; padding: 5px 10px; color: var(--muted); border-style: dashed; }
+.seg-status:empty { display: none; }
+
+/* ---- top bar: language, theme, feedback ---- */
+.top { flex-wrap: wrap; }
+.lang-pick { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding-inline-start: 8px; background: var(--surface); }
+.lang-pick svg, .icon-btn svg, .fb-open svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; flex: none; }
+.lang-pick select { border: 0; background: transparent; padding: 6px 8px 6px 2px; min-width: 0; }
+.icon-btn { display: inline-grid; place-items: center; padding: 6px 8px; }
+.icon-btn .i-sun, .icon-btn.is-dark .i-moon { display: none; }
+.icon-btn.is-dark .i-sun { display: block; }
+.fb-open { display: inline-flex; align-items: center; gap: 6px; }
+.mt-note { margin: 0; padding: 5px 16px; font-size: 12.5px; color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.mt-note button { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: inherit; }
+
+/* ---- right-to-left and other scripts ---- */
+/* Joined scripts break apart with letter spacing, and have no capitals. */
+:lang(fa) .step h2, :lang(ar) .step h2, :lang(ur) .step h2, :lang(hi) .step h2 { letter-spacing: 0; text-transform: none; font-size: 14px; }
+:lang(fa), :lang(ar), :lang(ur) { line-height: 1.7; }
+:lang(ur) body, :lang(ur) button, :lang(ur) input, :lang(ur) select, :lang(ur) textarea { font-family: system-ui, "Segoe UI", "Noto Naskh Arabic", Tahoma, sans-serif; }
+/* Sliders keep left = less in every language, so "move it left" means the same everywhere. */
+input[type="range"] { direction: ltr; }
+/* Until app.js has put in the words of a saved language (boot.js), show nothing for a moment. */
+html[data-pending] body { visibility: hidden; animation: reveal 0s 1.2s forwards; }
+@keyframes reveal { to { visibility: visible; } }
+
+/* ---- feedback dialog ---- */
+dialog.fb { width: min(540px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
+dialog.fb::backdrop { background: rgba(10, 14, 18, 0.55); }
+dialog.fb h2 { margin: 0 0 4px; font-size: 18px; }
+dialog.fb .field { margin: 12px 0; }
+dialog.fb textarea, dialog.fb input[type="email"], dialog.fb select { width: 100%; border: 1px solid var(--line); background: var(--surface-2); border-radius: 7px; padding: 8px 10px; font: inherit; color: var(--ink); }
+dialog.fb textarea { resize: vertical; min-height: 110px; }
+.fb-kinds { border: 0; padding: 0; margin: 12px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.fb-kinds legend { padding: 0; margin-bottom: 6px; color: var(--muted); font-size: 12.5px; }
+.fb-kinds label { display: flex; align-items: center; gap: 6px; }
+.fb-trap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.fb-status { min-height: 1.4em; margin: 8px 0 0; font-size: 13px; }
+.fb-status.bad { color: var(--cut); }
+.fb-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+@media (max-width: 640px) {
+  .fb-open span { display: none; }
+  .top { gap: 6px; }
+  .fb-kinds { grid-template-columns: 1fr; }
 }

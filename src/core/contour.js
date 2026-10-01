@@ -124,7 +124,9 @@ export function smoothClosed(pts, { sigma = 1.5, cornerDeg = 55, spacing = 0.75 
   }
   const r = Math.max(1, Math.round((3 * sigma) / spacing));
   const wts = [];
-  for (let d = 0; d <= r; d++) wts.push(Math.exp(-((d * spacing) ** 2) / (2 * sigma * sigma)));
+  // (sigma 0 means no smoothing: clamp it, or 0/0 makes every point NaN)
+  const s2 = Math.max(sigma, 0.05);
+  for (let d = 0; d <= r; d++) wts.push(Math.exp(-((d * spacing) ** 2) / (2 * s2 * s2)));
   const out = new Array(n);
   for (let i = 0; i < n; i++) {
     if (isCorner[i]) { out[i] = P[i]; continue; }
@@ -196,7 +198,8 @@ export function traceOutlines(field, { level = 0.5, minArea = 4, minHoleArea = m
     const simple = simplifyClosed(pts, tol, corners);
     if (simple.length < 3) continue;
     // With ink on the left of travel and y pointing down, an outer boundary has negative area.
-    paths.push({ pts: simple, closed: true, kind: a < 0 ? 'outer' : 'hole', area: Math.abs(a) });
+    // `dense` and `corners` (indices into it) are the smoothed loop before thinning, for arc fitting.
+    paths.push({ pts: simple, closed: true, kind: a < 0 ? 'outer' : 'hole', area: Math.abs(a), dense: pts, corners });
   }
   return {
     paths,
@@ -239,7 +242,9 @@ export function smoothOpen(pts, { sigma = 1.5, cornerDeg = 55, spacing = 0.75 } 
   corners.push(n - 1);
   const r = Math.max(1, Math.round((3 * sigma) / spacing));
   const wts = [];
-  for (let d = 0; d <= r; d++) wts.push(Math.exp(-((d * spacing) ** 2) / (2 * sigma * sigma)));
+  // (sigma 0 means no smoothing: clamp it, or 0/0 makes every point NaN)
+  const s2 = Math.max(sigma, 0.05);
+  for (let d = 0; d <= r; d++) wts.push(Math.exp(-((d * spacing) ** 2) / (2 * s2 * s2)));
   const out = P.map((p, i) => {
     if (pinned[i]) return p;
     let sx = p.x * wts[0], sy = p.y * wts[0], sw = wts[0];
@@ -285,7 +290,7 @@ export function simplifyOpen(pts, tol, keep = []) {
 // Join open paths end-to-end where exactly two ends meet (within `tol`), optionally
 // bridging free ends that are within `gap` of each other. Paths that come back to
 // their own start become closed. Points are { x, y }.
-export function joinPaths(paths, { tol = 1.5, gap = 0 } = {}) {
+export function joinPaths(paths, { tol = 1.5, gap = 0, reach = 0, aimDeg = 30, aimBack = 6 } = {}) {
   let P = paths.map((p) => ({ ...p, pts: p.pts.slice() }));
   const open = () => P.filter((p) => !p.closed);
   const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -313,6 +318,44 @@ export function joinPaths(paths, { tol = 1.5, gap = 0 } = {}) {
       const m = { x: (pt(e).x + pt(f).x) / 2, y: (pt(e).y + pt(f).y) / 2 };
       for (const g of [e, f]) { if (g.at) g.p.pts.push(m); else g.p.pts.unshift(m); }
       done.add(e); done.add(f);
+    }
+    // 1b) longer gaps (a faint stretch of a drawn line) between ends that point at each other:
+    // each end's direction of travel must aim at the other end within aimDeg.
+    if (reach > gap) {
+      const left = free.filter((e) => !done.has(e));
+      const back = Math.max(3, aimBack);
+      const dir = (e) => {
+        const q = e.p.pts, n = q.length, a = pt(e);
+        const b = e.at ? q[Math.max(0, n - 1 - Math.min(n - 1, Math.round(back)))] : q[Math.min(n - 1, Math.round(back))];
+        const l = d(a, b) || 1;
+        return { x: (a.x - b.x) / l, y: (a.y - b.y) / l };
+      };
+      const cosMax = Math.cos((aimDeg * Math.PI) / 180);
+      const aims = (e, f) => {
+        const a = pt(e), b = pt(f), l = d(a, b) || 1, u = dir(e);
+        return (u.x * (b.x - a.x) + u.y * (b.y - a.y)) / l;
+      };
+      const best = (e) => {
+        let pick = null, score = Infinity;
+        for (const f of left) {
+          if (f === e || f.p === e.p || done.has(f)) continue;
+          const dd = d(pt(e), pt(f));
+          if (dd > reach || dd <= gap) continue;
+          const ce = aims(e, f), cf = aims(f, e);
+          if (ce < cosMax || cf < cosMax) continue;
+          const s = dd * (3 - ce - cf);   // shorter and better aimed wins
+          if (s < score) { score = s; pick = f; }
+        }
+        return pick;
+      };
+      for (const e of left) {
+        if (done.has(e)) continue;
+        const f = best(e);
+        if (!f || best(f) !== e) continue;
+        const m = { x: (pt(e).x + pt(f).x) / 2, y: (pt(e).y + pt(f).y) / 2 };
+        for (const g of [e, f]) { if (g.at) g.p.pts.push(m); else g.p.pts.unshift(m); }
+        done.add(e); done.add(f);
+      }
     }
   }
   // 2) chain through points where exactly two ends meet
@@ -342,4 +385,110 @@ export function joinPaths(paths, { tol = 1.5, gap = 0 } = {}) {
     }
   }
   return P;
+}
+
+// Tidy the loose ends of traced lines (px). `touch`: an end this close to another line meets
+// it. Then, for each end that meets nothing:
+//   - a short stub (under `spur` long) hanging off a junction is junction debris: dropped;
+//   - an end within `reach` of another line is extended onto its nearest point, so a line
+//     that stops just short of the line it runs into meets it (a T), and two tips that
+//     almost touch meet.
+export function mendEnds(paths, { touch = 2, reach = 8, spur = 10 } = {}) {
+  const len = (q) => { let L = 0; for (let j = 1; j < q.length; j++) L += Math.hypot(q[j].x - q[j - 1].x, q[j].y - q[j - 1].y); return L; };
+  const build = (P) => {
+    // every line sampled at <= 1 px, in a grid of reach-sized cells: [path, distance along, x, y]
+    const cell = Math.max(reach, touch * 2), grid = new Map();
+    P.forEach((p, i) => {
+      const q = p.pts, n = q.length, edges = p.closed ? n : n - 1;
+      let t = 0;
+      const add = (x, y) => { const k = `${Math.floor(x / cell)},${Math.floor(y / cell)}`; if (!grid.has(k)) grid.set(k, []); grid.get(k).push([i, t, x, y]); };
+      if (n) add(q[0].x, q[0].y);
+      for (let j = 0; j < edges; j++) {
+        const u = q[j], v = q[(j + 1) % n], L = Math.hypot(v.x - u.x, v.y - u.y), steps = Math.max(1, Math.ceil(L));
+        for (let s = 1; s <= steps; s++) { t += L / steps; add(u.x + ((v.x - u.x) * s) / steps, u.y + ((v.y - u.y) * s) / steps); }
+      }
+    });
+    // the nearest point of another line (or of this line, far enough along) to end e of path i
+    return (i, e, t0, maxD) => {
+      const cx = Math.floor(e.x / cell), cy = Math.floor(e.y / cell);
+      let best = null, bd = maxD;
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        for (const [pi, t, x, y] of grid.get(`${cx + dx},${cy + dy}`) || []) {
+          if (pi === i && Math.abs(t - t0) < Math.max(reach, touch) * 3) continue;
+          const d = Math.hypot(x - e.x, y - e.y);
+          if (d <= bd) { bd = d; best = { x, y, d }; }
+        }
+      }
+      return best;
+    };
+  };
+  let P = paths.map((p) => ({ ...p, pts: p.pts.slice() }));
+  // 1) drop stubs: short open lines with one end at a junction and the other loose
+  let nearest = build(P);
+  const keep = P.map((p, i) => {
+    if (p.closed || p.pts.length < 2) return true;
+    const L = len(p.pts);
+    if (L >= spur) return true;
+    const a = nearest(i, p.pts[0], 0, touch), b = nearest(i, p.pts[p.pts.length - 1], L, touch);
+    return !((a && !b) || (!a && b));
+  });
+  P = P.filter((_, i) => keep[i]);
+  // 2) extend loose ends onto the nearest line within reach
+  nearest = build(P);
+  P.forEach((p, i) => {
+    if (p.closed || p.pts.length < 2) return;
+    const L = len(p.pts);
+    for (const at of [0, 1]) {
+      const e = at ? p.pts[p.pts.length - 1] : p.pts[0];
+      if (nearest(i, e, at ? L : 0, touch)) continue;
+      const m = nearest(i, e, at ? L : 0, reach);
+      if (!m) continue;
+      if (at) p.pts.push({ x: m.x, y: m.y }); else p.pts.unshift({ x: m.x, y: m.y });
+    }
+  });
+  return P;
+}
+
+// Ends of open paths that touch no other line (and not their own line further along): where a
+// cut would stop in the middle of the material. Lines meeting at a junction are not loose.
+export function danglingEnds(paths, tol) {
+  // Every line, sampled at least every tol (a long straight piece has no points in its middle),
+  // in a grid: [path, distance along it, x, y].
+  const cell = tol * 2, grid = new Map();
+  const add = (i, t, x, y) => {
+    const k = `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push([i, t, x, y]);
+  };
+  paths.forEach((p, i) => {
+    const q = p.pts, n = q.length, edges = p.closed ? n : n - 1;
+    let t = 0;
+    if (n) add(i, 0, q[0].x, q[0].y);
+    for (let j = 0; j < edges; j++) {
+      const u = q[j], v = q[(j + 1) % n], L = Math.hypot(v.x - u.x, v.y - u.y), steps = Math.ceil(L / tol);
+      for (let s = 1; s <= steps; s++) add(i, t + (L * s) / steps, u.x + ((v.x - u.x) * s) / steps, u.y + ((v.y - u.y) * s) / steps);
+      t += L;
+    }
+  });
+  const out = [];
+  paths.forEach((p, i) => {
+    if (p.closed || p.pts.length < 2) return;
+    const q = p.pts, n = q.length;
+    let len = 0;
+    for (let j = 1; j < n; j++) len += Math.hypot(q[j].x - q[j - 1].x, q[j].y - q[j - 1].y);
+    for (const [e, t0] of [[q[0], 0], [q[n - 1], len]]) {
+      const cx = Math.floor(e.x / cell), cy = Math.floor(e.y / cell);
+      let touches = false;
+      for (let dx = -1; dx <= 1 && !touches; dx++) for (let dy = -1; dy <= 1 && !touches; dy++) {
+        for (const [pi, t, x, y] of grid.get(`${cx + dx},${cy + dy}`) || []) {
+          if (Math.hypot(x - e.x, y - e.y) > tol) continue;
+          // Along its own line, an end only counts as touching beyond a few tolerances of travel.
+          if (pi === i && Math.abs(t - t0) < tol * 6) continue;
+          touches = true; break;
+        }
+      }
+      if (!touches) out.push({ x: e.x, y: e.y });
+    }
+  });
+  return out;
 }
