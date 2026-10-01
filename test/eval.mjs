@@ -119,3 +119,11 @@ for (const [name, gt, photo, params] of cases) {
   }
 }
 for (const r of results) console.log(`${r.case}: ${r.ms} ms, snap ${r.snapDeg} deg, ${r.holes} holes, ${r.warnings} warnings`);
+
+// Fail (CI runs this) when accuracy drops below what the engine reaches today, with a little room.
+const floor = { recall: 0.99, precision: 0.85, p95ErrMM: 1.0 };
+const bad = results.filter((r) => r.recall < floor.recall || r.precision < floor.precision || r.p95ErrMM > floor.p95ErrMM);
+if (bad.length) {
+  console.error(`accuracy below the floor ${JSON.stringify(floor)}: ${bad.map((r) => r.case).join(', ')}`);
+  process.exit(1);
+}

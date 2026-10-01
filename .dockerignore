@@ -1,0 +1,13 @@
+node_modules
+dist
+output
+samples
+.out
+.github
+.claude
+.agents
+*.md
+.git
+!.git/HEAD
+!.git/refs
+!.git/packed-refs

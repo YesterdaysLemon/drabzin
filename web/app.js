@@ -92,19 +92,19 @@ function setImage(el, img) {
 
 function showError(err) {
   console.error(err);
-  $('warnings').innerHTML = `<li>Something went wrong while processing: ${escapeHtml(String(err).split('\n')[0])}</li>`;
+  $('warnings').innerHTML = `<li>Something went wrong (${escapeHtml(String(err).split('\n')[0])}). Try a smaller crop or another image.</li>`;
 }
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 // ---------- loading ----------
 async function loadFile(file) {
   if (!file || !file.type.startsWith('image/')) {
-    $('filename').textContent = 'That file is not an image. For a PDF, take a screenshot of the page and use that.';
+    $('filename').textContent = 'That file is not an image. For a PDF, take a screenshot of the page and use the screenshot.';
     return;
   }
   let bmp;
   try { bmp = await createImageBitmap(file); } catch {
-    $('filename').textContent = 'This browser cannot open that image format (for HEIC photos, export as JPEG first).';
+    $('filename').textContent = 'This browser cannot open this kind of image. For iPhone (HEIC) photos, save them as JPEG first.';
     return;
   }
   const s = Math.min(1, 3000 / Math.max(bmp.width, bmp.height));
@@ -200,6 +200,7 @@ function worldSize() {
 function fit() {
   const { w, h } = worldSize();
   const box = $('viewer').getBoundingClientRect();
+  if (!box.width || !box.height) return;   // not laid out yet (a hidden tab): fit when it is
   const s = Math.min(box.width / w, box.height / h) * 0.94;
   state.cam[space()] = { s, x: w / 2 - box.width / s / 2, y: h / 2 - box.height / s / 2, auto: true };
   applyCam();
@@ -208,11 +209,12 @@ function applyCam() {
   const c = camFor();
   if (!c) return;
   const box = $('viewer').getBoundingClientRect();
+  if (!box.width || !box.height || !(c.s > 0)) return;
   $('svg').setAttribute('viewBox', `${c.x} ${c.y} ${box.width / c.s} ${box.height / c.s}`);
   if (state.view === 'photo') drawCrop();
 }
 // Keep the drawing fitted while the layout settles, until the user zooms or pans.
-new ResizeObserver(() => (camFor()?.auto ? fit() : applyCam())).observe($('viewer'));
+new ResizeObserver(() => (!camFor() || camFor().auto ? fit() : applyCam())).observe($('viewer'));
 
 function toWorld(ev) {
   const c = camFor(), box = $('viewer').getBoundingClientRect();
@@ -353,6 +355,7 @@ function renderResult() {
     c.setAttribute('d', res.centrelines.map((p) => d(p.pts, false)).join(''));
     g.appendChild(c);
   }
+  const hits = [];
   res.paths.forEach((p, i) => {
     if (state.removed.has(i)) return;
     const cls = state.selected.has(i) ? 'selected' : p.kind === 'hole' ? 'hole' : p.closed ? 'outer' : 'open';
@@ -360,12 +363,20 @@ function renderResult() {
     el.setAttribute('class', cls);
     el.setAttribute('d', d(p.pts, p.closed));
     g.appendChild(el);
-    const hit = document.createElementNS(SVGNS, 'path');
-    hit.setAttribute('class', 'hit');
-    hit.setAttribute('d', d(p.pts, p.closed));
-    hit.dataset.i = i;
-    g.appendChild(hit);
+    hits.push({ i, p, area: p.closed ? Math.abs(area(p.pts)) : 0 });
   });
+  // Click targets: a closed shape can be picked by clicking anywhere inside it, not just on its
+  // thin edge. Smaller shapes go on top, so a loose piece inside a hole picks the piece. The main
+  // part (the largest outline) only picks by its edge, so a stray click can't select the whole design.
+  const main = hits.reduce((m, h) => (h.p.kind !== 'hole' && h.area > (m?.area ?? 0) ? h : m), null);
+  hits.sort((a, b) => b.area - a.area);
+  for (const h of hits) {
+    const hit = document.createElementNS(SVGNS, 'path');
+    hit.setAttribute('class', h.p.closed && h !== main ? 'hit area' : 'hit');
+    hit.setAttribute('d', d(h.p.pts, h.p.closed));
+    hit.dataset.i = h.i;
+    g.appendChild(hit);
+  }
   renderStatus();
 }
 
@@ -380,40 +391,53 @@ function renderStatus() {
     return s + L;
   }, 0);
   const names = { outline: 'Solid shapes', centreline: 'Line drawing', geometric: 'Geometric' };
-  const stat = (k, v) => `<span>${k} <b>${v}</b></span>`;
+  const what = {
+    outline: 'Cuts around filled shapes: panels, flowers, logos, calligraphy.',
+    centreline: 'Cuts along the middle of each drawn line.',
+    geometric: 'Rebuilds straight bars with exact angles.',
+  };
+  // Pieces and holes as they are now (after any deletions); every piece but the main one is loose.
+  const loose = res.pieces != null ? Math.max(0, kept.filter((p) => p.kind === 'outer').length - 1) : null;
+  const holes = res.holes != null ? kept.filter((p) => p.kind === 'hole').length : null;
+  const stat = (k, v, tip = '') => `<span${tip ? ` title="${tip}"` : ''}>${k} <b>${v}</b></span>`;
   $('stats').innerHTML = [
     stat('Size', `${fmt(res.widthMM)} × ${fmt(res.heightMM)} mm`),
-    stat('Cut paths', kept.length),
+    stat('Cut lines', kept.length),
     stat('Cut length', `${(cut / 1000).toFixed(2)} m`),
-    res.holes != null ? stat('Holes', res.holes) : '',
-    res.pieces != null ? stat('Separate pieces', res.pieces) : '',
-    res.snapDeg != null ? stat('Angles', res.snapDeg ? `every ${res.snapDeg}°` : 'free') : '',
-    res.bandWidthMM != null ? stat('Strap', `${fmt(res.bandWidthMM)} mm`) : '',
-    stat('Vertices', verts),
-    stat('Time', `${r.ms} ms`),
+    holes != null ? stat('Holes', holes) : '',
+    loose != null ? stat('Loose pieces', loose, 'Pieces not joined to the main part') : '',
+    res.snapDeg != null ? stat('Angles', res.snapDeg ? `every ${res.snapDeg}°` : 'any') : '',
+    res.bandWidthMM != null ? stat('Bar width', `${fmt(res.bandWidthMM)} mm`) : '',
+    stat('Points', verts, 'How many points the cut lines have. More points means a bigger file.'),
   ].join('');
-  $('modeHint').textContent = state.mode === 'auto' ? `Auto picked: ${names[r.mode]}.` : (r.suggestion !== r.mode ? `Auto would pick: ${names[r.suggestion]}.` : '');
+  $('modeHint').textContent = state.mode === 'auto'
+    ? `Auto chose ${names[r.mode]}. ${what[r.mode]}`
+    : `${what[r.mode]}${r.suggestion !== r.mode ? ` (Auto would choose ${names[r.suggestion]}.)` : ''}`;
   document.body.classList.toggle('mode-geometric', r.mode === 'geometric');
   document.body.classList.toggle('mode-centreline', r.mode === 'centreline');
   document.body.classList.toggle('mode-outline', r.mode === 'outline');
-  $('sizeOut').textContent = `Output: ${fmt(res.widthMM)} × ${fmt(res.heightMM)} mm`;
+  $('sizeOut').textContent = `The file will be ${fmt(res.widthMM)} × ${fmt(res.heightMM)} mm.`;
 
   const warn = [...(res.warnings || [])];
-  if (r.mode === 'outline' && res.pieces > 1)
-    warn.push(`${res.pieces} separate pieces. Anything not joined to the main part will fall out when cut. Join it in the design or delete it here.`);
+  if (r.mode === 'outline' && loose > 0)
+    warn.push(`${count(loose, 'piece is', 'pieces are')} not joined to the main part, so ${loose === 1 ? 'it' : 'they'} will fall out when cut. Join ${loose === 1 ? 'it' : 'them'} in your design, or click ${loose === 1 ? 'it' : 'them'} and press Delete.`);
   if (r.mode === 'centreline') {
     const open = kept.filter((p) => !p.closed).length;
-    if (open) warn.push(`${open} open path(s) (green). Fine for engraving or scoring lines; for through-cuts, check they meet up.`);
+    if (open) warn.push(`${count(open, 'line has', 'lines have')} open ends (green). That is fine for engraving. To cut through, the ends must meet.`);
   }
   $('warnings').innerHTML = warn.map((w) => `<li>${escapeHtml(w)}</li>`).join('');
   $('exportDxf').disabled = $('exportSvg').disabled = !kept.length;
   const sel = state.selected.size;
   $('sel').hidden = !sel && !state.history.length;
-  $('selInfo').textContent = sel ? `${sel} path(s) selected` : 'Click a path to select it (Shift for several).';
+  $('selInfo').textContent = sel ? `${count(sel, 'line', 'lines')} selected.` : 'Click a line to select it. Hold Shift to select more.';
   $('delSel').disabled = !sel;
   $('undo').disabled = !state.history.length;
 }
 const fmt = (v) => (Math.round(v * 10) / 10).toString();
+// Signed area of a closed polyline (shoelace).
+const area = (pts) => pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.length]; return s + p.x * q.y - q.x * p.y; }, 0) / 2;
+// "1 line" / "3 lines": a number with the right word after it.
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 function clickAt(target, add) {
   if (state.view === 'photo' || state.view === 'mask') return;

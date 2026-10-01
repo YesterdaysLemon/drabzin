@@ -1,0 +1,88 @@
+name: "Validate and deploy Drabzin Vectorizer"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Validate application
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
+          # The production server: health, the page and the engine are all served.
+          PORT=8099 node scripts/serve.mjs --dist &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8099/healthz >/dev/null 2>&1 && break; sleep 0.2; done
+          curl -fsS http://127.0.0.1:8099/healthz | grep -q '"ok":true'
+          curl -fsS http://127.0.0.1:8099/ | grep -q 'Download DXF'
+          curl -fsS -o /dev/null http://127.0.0.1:8099/core/pipeline.js
+          curl -fsS -o /dev/null http://127.0.0.1:8099/worker.js
+      - name: Notify Deploy Manager
+        if: >-
+          vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_EVENT: push
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+          DEPLOY_REPOSITORY: ${{ github.repository }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_WEBHOOK_URL"
+          test -n "$DEPLOY_WEBHOOK_SECRET"
+          payload="$(node -e 'const p={event:process.env.DEPLOY_EVENT,branch:process.env.DEPLOY_BRANCH,repo:process.env.DEPLOY_REPOSITORY,sha:process.env.DEPLOY_SHA};process.stdout.write(JSON.stringify(p))')"
+          signature="$(node -e 'const c=require("crypto");process.stdout.write("sha256="+c.createHmac("sha256",process.env.DEPLOY_WEBHOOK_SECRET).update(process.argv[1]).digest("hex"))' "$payload")"
+          response="$(curl --fail-with-body --silent --show-error --max-time 30 \
+            --request POST "$DEPLOY_WEBHOOK_URL" \
+            --header "Content-Type: application/json" \
+            --header "X-GitHub-Event: $DEPLOY_EVENT" \
+            --header "X-Hub-Signature-256: $signature" \
+            --data "$payload")"
+          job_id="$(node -e 'const r=JSON.parse(process.argv[1]);if(r.skipped){console.error("Deploy Manager skipped request; verify repository, branch and event allowlist");process.exit(1)}if(!r.job?.id||!r.receipt){console.error("Deploy Manager returned no job receipt");process.exit(1)}if(r.job.sha!==process.env.DEPLOY_SHA){console.error("Deploy Manager accepted SHA mismatch");process.exit(1)}process.stdout.write(r.job.id)' "$response")"
+          receipt_url="$(node -e 'const r=JSON.parse(process.argv[1]);const w=new URL(process.argv[2]);const u=new URL(r.receipt,w.origin);if(u.origin!==w.origin||u.pathname!=="/api/releases/"+r.job.id){console.error("Invalid Deploy Manager receipt URL");process.exit(1)}process.stdout.write(u.href)' "$response" "$DEPLOY_WEBHOOK_URL")"
+          echo "Deploy Manager accepted job $job_id (duplicates reuse the original receipt; re-running after an interrupted job starts a fresh one)"
+          for attempt in $(seq 1 600); do
+            job="$(curl --fail-with-body --silent --show-error --max-time 30 "$receipt_url")"
+            status="$(node -e 'const r=JSON.parse(process.argv[1]);if(r.job?.id!==process.argv[2]){console.error("Deploy Manager receipt identity mismatch");process.exit(1)}process.stdout.write(r.job.status??"unknown")' "$job" "$job_id")"
+            case "$status" in
+              succeeded) echo "Deploy Manager job $job_id succeeded"; exit 0 ;;
+              failed|rolled-back|interrupted) echo "Deploy Manager job $job_id ended with $status" >&2; exit 1 ;;
+              queued|running) ;;
+              *) echo "Deploy Manager job $job_id has unknown status: $status" >&2; exit 1 ;;
+            esac
+            sleep 2
+          done
+          echo "Deploy Manager job $job_id exceeded the receipt polling limit" >&2
+          exit 1
+      - name: Check the live site
+        if: >-
+          vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS https://drabzin.alirezaafshan.com/healthz | grep -q "\"sha\":\"$GITHUB_SHA\""; then echo "live at $GITHUB_SHA"; exit 0; fi
+            sleep 5
+          done
+          echo "the live site does not report $GITHUB_SHA" >&2
+          exit 1
