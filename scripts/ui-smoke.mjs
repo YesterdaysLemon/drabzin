@@ -183,8 +183,9 @@ try {
 
   // Feedback: an empty message is stopped with a hint; a real one is sent (the dev server
   // checks it like the live Worker does and prints the email).
-  // Production builds leave /api/feedback to the edge Worker: answer it here as the Worker would.
-  if (args.includes('--dist')) await page.route('**/api/feedback', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }));
+  // Production builds and the live site leave /api/feedback to the edge Worker, which really emails:
+  // answer it here as the Worker would.
+  if (args.includes('--dist') || opt('--url')) await page.route('**/api/feedback', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }));
   await page.click('#feedback');
   await page.waitForSelector('#fbDialog[open]');
   await page.click('#fbSend');
