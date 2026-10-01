@@ -97,7 +97,7 @@ export function buildCutGeometry(graph, opts) {
 
   const warnings = [];
   const flags = { tinyHoles: [], tightHoles: [], thinBridges: [], islands: islands.map(fromPath) };
-  if (islands.length) warnings.push(`${islands.length} loose piece(s) would fall out when cut. Add tabs or join them to the strapwork.`);
+  if (islands.length) warnings.push(`${islands.length} loose ${islands.length === 1 ? 'piece' : 'pieces'} will fall out when cut. Join ${islands.length === 1 ? 'it' : 'them'} to the bars, or add small tabs.`);
 
   // Holes the tool cannot clear (morphological opening by the tool radius).
   if (toolDiameter > 0) {

@@ -1,0 +1,19 @@
+# Managed by al-stack. Keep extended prose in AGENTS.md.
+"schema" = 1
+
+["project"]
+"id" = "a546b81d-a141-42be-97a5-2dddb64e9388"
+"name" = "drabzin-vectorizer"
+"status" = "experimental"
+"profile" = "web"
+"purpose" = "Drabzin Vectorizer: turns images of door and gate designs into DXF cut paths for lasers and CNC routers, entirely in the browser (static site)"
+
+["stack"]
+"version" = "0.1.0"
+"revision" = "11eac15f6a8a0dc76f06ef97c7c3a27c7f668e0a+dirty.14419bcd734fed27"
+
+["commands"]
+"dev" = "npm run dev"
+"build" = "npm run build"
+"test" = "npm test"
+"preview" = "npm run preview"

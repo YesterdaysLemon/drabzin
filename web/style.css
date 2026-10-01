@@ -104,7 +104,10 @@ body.mode-centreline .cl-only { display: flex; }
 .viewer { position: relative; flex: 1; min-height: 320px; background: var(--stage); overflow: hidden; touch-action: none; }
 .viewer svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
 .viewer svg.panning { cursor: grabbing; }
-.empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--muted); pointer-events: none; }
+.empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; color: var(--muted); pointer-events: none; padding: 16px; }
+.empty-title { color: var(--ink); font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+.howto { text-align: left; margin: 0 0 14px; padding-left: 22px; line-height: 1.9; color: var(--ink); }
+.tabs .view-help { color: var(--muted); font-size: 12px; margin-right: 4px; }
 .busy { position: absolute; top: 10px; right: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; }
 
 #paths path { vector-effect: non-scaling-stroke; fill: none; stroke-width: 1.4; }
@@ -114,6 +117,7 @@ body.mode-centreline .cl-only { display: flex; }
 #paths path.centre { stroke: var(--muted); stroke-dasharray: 4 3; stroke-width: 1; }
 #paths path.selected { stroke: var(--sel); stroke-width: 3.5; }
 #paths path.hit { stroke: transparent; stroke-width: 10; pointer-events: stroke; cursor: pointer; }
+#paths path.hit.area { pointer-events: all; }
 #paths .fill { fill: var(--ink); stroke: none; pointer-events: none; }
 .view-result #paths path:not(.fill):not(.hit):not(.selected) { stroke-width: 1; }
 
@@ -139,6 +143,7 @@ body.mode-centreline .cl-only { display: flex; }
 [hidden] { display: none !important; }
 .viewer svg image { -webkit-user-drag: none; user-select: none; }
 @media (max-width: 480px) {
+  .tabs .view-help { display: none; }
   .tabs { gap: 4px; padding: 6px 8px; }
   .tabs button { padding: 6px 9px; font-size: 13px; }
   .top-actions button { padding: 6px 10px; }

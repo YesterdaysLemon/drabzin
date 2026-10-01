@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Drabzin Vectorizer</title>
-  <meta name="description" content="Turn photos, sketches and images of door and gate designs into clean DXF cut paths.">
+  <meta name="description" content="Turn a picture of a door or gate design into a DXF file for laser and CNC cutting.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d2a36'/%3E%3Cpath d='M16 4l3.5 8.5L28 16l-8.5 3.5L16 28l-3.5-8.5L4 16l8.5-3.5z' fill='none' stroke='%23e9b44c' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -16,7 +16,7 @@
     </div>
     <div class="top-actions">
       <button id="exportDxf" class="primary" disabled>Download DXF</button>
-      <button id="exportSvg" disabled>SVG</button>
+      <button id="exportSvg" disabled title="Download the same lines as an SVG file">SVG</button>
     </div>
   </header>
 
@@ -27,28 +27,30 @@
         <label class="drop" id="drop">
           <input type="file" id="file" accept="image/*">
           <strong>Choose an image</strong>
-          <small>or drop / paste one here (photo, scan, screenshot)</small>
+          <small>or drag it here, or paste it (Ctrl+V).<br>A photo, scan or screenshot is fine.</small>
         </label>
         <p class="filename" id="filename"></p>
       </section>
 
       <section class="step" data-needs-image>
         <h2><span>2</span>Crop</h2>
-        <p class="hint">Drag the four corners onto the design (leave out labels and dimensions). For a photo taken at an angle, put them on the panel's real corners. The view straightens it.</p>
+        <p class="hint">Click <b>Move corners</b>, then drag the 4 dots to the edges of the design. Leave out text and measurements.</p>
+        <p class="hint">Photo taken at an angle? Put the dots on the real corners of the panel. The app makes it straight.</p>
         <div class="row">
-          <button id="cropEdit" class="toggle">Adjust corners</button>
-          <button id="cropReset">Whole image</button>
+          <button id="cropEdit" class="toggle">Move corners</button>
+          <button id="cropReset">Use whole image</button>
         </div>
       </section>
 
       <section class="step" data-needs-image>
-        <h2><span>3</span>Size</h2>
+        <h2><span>3</span>Real size</h2>
+        <p class="hint">How big is the real design? Enter its width or its height.</p>
         <div class="row">
-          <label class="field grow">Real size
-            <span class="unit"><input type="number" id="sizeMM" value="1000" min="1" step="1"> mm</span>
+          <label class="field">
+            <select id="sizeAxis" aria-label="Width or height"><option value="width">Width</option><option value="height">Height</option></select>
           </label>
-          <label class="field">along
-            <select id="sizeAxis"><option value="width">width</option><option value="height">height</option></select>
+          <label class="field grow">
+            <span class="unit"><input type="number" id="sizeMM" value="1000" min="1" step="1" aria-label="Size in millimetres"> mm</span>
           </label>
         </div>
         <p class="hint" id="sizeOut"></p>
@@ -57,39 +59,39 @@
       <section class="step" data-needs-image>
         <h2><span>4</span>Type of design</h2>
         <div class="seg" id="mode" role="radiogroup">
-          <button data-v="auto" class="on" role="radio">Auto</button>
-          <button data-v="outline" role="radio">Solid shapes</button>
-          <button data-v="centreline" role="radio">Line drawing</button>
-          <button data-v="geometric" role="radio">Geometric <span class="tag">beta</span></button>
+          <button data-v="auto" class="on" role="radio" title="The app chooses for you">Auto</button>
+          <button data-v="outline" role="radio" title="Cut around filled shapes">Solid shapes</button>
+          <button data-v="centreline" role="radio" title="Cut along drawn lines">Line drawing</button>
+          <button data-v="geometric" role="radio" title="Straight bars with exact angles">Geometric <span class="tag">beta</span></button>
         </div>
         <p class="hint" id="modeHint"></p>
 
-        <label class="check outline-only"><input type="checkbox" id="straight"> Straight edges (polygon / geometric designs)</label>
+        <label class="check outline-only"><input type="checkbox" id="straight"> Make edges straight (for star and polygon patterns)</label>
         <div class="geo-only">
-          <p class="hint">Rebuilds straight strapwork with exact angles and symmetry. Best for photos of regular lattice patterns; for clean drawings, Solid shapes with straight edges is usually better.</p>
+          <p class="hint">Makes every line straight and every angle exact. Use it for photos of repeating lattice patterns. For a clean drawing, Solid shapes with <b>Make edges straight</b> usually works better.</p>
           <div class="row">
             <label class="field">Repeats across<input type="number" id="nx" value="1" min="1" max="20"></label>
             <label class="field">Repeats down<input type="number" id="ny" value="1" min="1" max="40"></label>
           </div>
           <div class="row">
-            <label class="field">Rotational symmetry
+            <label class="field">Repeats around the centre
               <select id="order">
-                <option value="1">none</option><option value="2">2-fold</option><option value="4">4-fold</option>
-                <option value="6">6-fold</option><option value="8">8-fold</option><option value="10">10-fold</option>
-                <option value="12">12-fold</option><option value="16">16-fold</option>
+                <option value="1">none</option><option value="2">2 times</option><option value="4">4 times</option>
+                <option value="6">6 times</option><option value="8">8 times</option><option value="10">10 times</option>
+                <option value="12">12 times</option><option value="16">16 times</option>
               </select>
             </label>
-            <label class="check"><input type="checkbox" id="mirror"> mirror</label>
+            <label class="check"><input type="checkbox" id="mirror"> Mirror (both sides the same)</label>
           </div>
           <div class="row">
-            <label class="field">Line angles
+            <label class="field">Line directions
               <select id="snapDeg">
                 <option value="">auto</option><option value="90">every 90°</option><option value="45">every 45°</option>
                 <option value="30">every 30°</option><option value="22.5">every 22.5°</option><option value="18">every 18°</option>
-                <option value="15">every 15°</option><option value="0">free</option>
+                <option value="15">every 15°</option><option value="0">any angle</option>
               </select>
             </label>
-            <label class="field">Strap width
+            <label class="field">Bar width
               <span class="unit"><input type="number" id="bandWidthMM" placeholder="auto" min="0" step="0.5"> mm</span>
             </label>
           </div>
@@ -97,27 +99,30 @@
       </section>
 
       <section class="step" data-needs-image>
-        <h2><span>5</span>Clean-up</h2>
-        <label class="check"><input type="checkbox" id="invert"> Swap material and background</label>
-        <label class="slider">Threshold <output id="levelOut"></output>
+        <h2><span>5</span>Fix the result</h2>
+        <label class="check"><input type="checkbox" id="invert"> Swap filled and empty areas</label>
+        <label class="slider">Colour cut-off <output id="levelOut"></output>
           <input type="range" id="level" min="0.1" max="0.9" step="0.01" value="0.4">
         </label>
+        <p class="hint">Parts missing? Move it left. Background included? Move it right.</p>
         <label class="slider">Smoothness <output id="smoothOut"></output>
           <input type="range" id="smooth" min="0" max="5" step="0.1" value="1.2">
         </label>
+        <p class="hint">Higher makes curves smoother but removes small detail.</p>
         <details>
-          <summary>More</summary>
-          <label class="slider">Keep corners sharper than <output id="cornerOut"></output>
+          <summary>More settings</summary>
+          <label class="slider">Sharp corner angle <output id="cornerOut"></output>
             <input type="range" id="cornerDeg" min="20" max="120" step="1" value="55">
           </label>
-          <label class="field">Ignore specks smaller than
+          <p class="hint">Corners sharper than this stay sharp. Others are rounded.</p>
+          <label class="field">Remove dots smaller than
             <span class="unit"><input type="number" id="speckMM2" placeholder="auto" min="0" step="0.5"> mm²</span>
           </label>
-          <label class="field cl-only">Bridge gaps up to
+          <label class="field cl-only">Close gaps in lines up to
             <span class="unit"><input type="number" id="bridgeMM" placeholder="auto" min="0" step="0.5"> mm</span>
           </label>
-          <label class="field">Working resolution
-            <select id="maxSide"><option value="1600">fast (1600 px)</option><option value="2400" selected>normal (2400 px)</option><option value="3600">fine (3600 px)</option></select>
+          <label class="field">Quality
+            <select id="maxSide"><option value="1600">fast</option><option value="2400" selected>normal</option><option value="3600">best (slower)</option></select>
           </label>
         </details>
       </section>
@@ -125,12 +130,13 @@
 
     <section class="stage">
       <div class="tabs" role="tablist">
-        <button data-view="photo" class="on">Original</button>
-        <button data-view="mask">Cleaned</button>
-        <button data-view="overlay">Overlay</button>
-        <button data-view="result">Result</button>
+        <button data-view="photo" class="on" title="Your image. Move the crop corners here.">Original</button>
+        <button data-view="mask" title="Black is the design, white is the background">Black &amp; white</button>
+        <button data-view="overlay" title="The cut lines on top of your image">Overlay</button>
+        <button data-view="result" title="Only the cut lines, as they will be in the file">Result</button>
         <span class="spacer"></span>
-        <button id="fit" title="Fit to view">Fit</button>
+        <span class="view-help">Scroll to zoom. Drag to move.</span>
+        <button id="fit" title="Show the whole design">Fit</button>
       </div>
       <div class="viewer" id="viewer">
         <svg id="svg" xmlns="http://www.w3.org/2000/svg">
@@ -143,8 +149,15 @@
           </g>
         </svg>
         <div class="empty" id="empty">
-          <p>Choose an image to start.</p>
-          <p class="hint">Everything runs in your browser. Images are never uploaded.</p>
+          <p class="empty-title">Turn a picture of a design into a DXF file for cutting.</p>
+          <ol class="howto">
+            <li>Choose an image of the design.</li>
+            <li>Move the 4 corners onto the design.</li>
+            <li>Enter the real width or height.</li>
+            <li>Check the red cut lines.</li>
+            <li>Click <b>Download DXF</b>. It opens in AutoCAD.</li>
+          </ol>
+          <p class="hint">Your image stays on your computer. It is never uploaded.</p>
         </div>
         <div class="busy" id="busy" hidden>Working…</div>
       </div>
@@ -152,7 +165,7 @@
         <div class="stats" id="stats"></div>
         <div class="sel" id="sel" hidden>
           <span id="selInfo"></span>
-          <button id="delSel">Delete selected</button>
+          <button id="delSel">Delete</button>
           <button id="undo" disabled>Undo</button>
         </div>
         <ul class="warnings" id="warnings"></ul>
